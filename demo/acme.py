@@ -54,7 +54,11 @@ class AcmeAgent(DemoAgent):
 
         if state == "request_received":
             # TODO issue credentials based on the credential_definition_id
-            pass
+            cred_attrs = self.cred_attrs[message["credential_definition_id"]]
+            await self.admin_POST(
+                f"/credential_exchange/{credential_exchange_id}/issue",
+                {"credential_values": cred_attrs},
+            )
 
     async def handle_presentations(self, message):
         state = message["state"]
@@ -69,7 +73,20 @@ class AcmeAgent(DemoAgent):
 
         if state == "presentation_received":
             # TODO handle received presentations
-            pass
+            # if presentation is a degree schema (proof of education), check the received values
+            is_proof_of_education = (message['presentation_request']['name'] == 'Proof of Education')
+            if is_proof_of_education:
+                log_status("#28.1 Received proof of education, check claims")
+                for attr, value in message['presentation_request']['requested_attributes'].items():
+                    # just print out the received claim values
+                    self.log(value['name'], message['presentation']['requested_proof']['revealed_attrs'][attr]['raw'])
+                for identifier in message['presentation']['identifiers']:
+                    # just print out the schema/cred def id's of presented claims
+                    self.log(identifier['schema_id'], identifier['cred_def_id'])
+                # TODO placeholder for the next step
+            else:
+                # in case there are any other kinds of proofs received
+                self.log("#28.1 Received ", message['presentation_request']['name'])
 
     async def handle_basicmessages(self, message):
         self.log("Received message:", message["content"])
@@ -108,9 +125,9 @@ async def main():
                 )
             )
             # TODO define schema
-            #(schema_id, credential_definition_id) = await agent.register_schema_and_creddef(
-            #    "employee id schema", version, ["employee_id", "name", "date", "position"]
-            #    )
+            (schema_id, credential_definition_id) = await agent.register_schema_and_creddef(
+                "employee id schema", version, ["employee_id", "name", "date", "position"]
+                )
 
         with log_timer("Generate invitation duration:"):
             # Generate an invitation
@@ -138,11 +155,41 @@ async def main():
             elif option == "1":
                 log_status("#13 Issue credential offer to X")
                 # TODO credential offers
+                log_status("#13 Issue credential offer to X")
+                offer = {
+                    "credential_definition_id": credential_definition_id,
+                    "connection_id": agent.connection_id,
+                }
+                agent.cred_attrs[credential_definition_id] = {
+                    "employee_id": "ACME0009",
+                    "name": "Alice Smith",
+                    "date": "2019-06-30",
+                    "position": "CEO",
+                }
+                await agent.admin_POST("/credential_exchange/send-offer", offer)
                 
 
             elif option == "2":
                 log_status("#20 Request proof of degree from alice")
                 # TODO presentation requests
+                # ask for any degree, don't restrict to Faber (we can check the issuer when we receive the proof)
+                proof_attrs = [
+                    {"name": "name", "restrictions": [{"schema_name": "degree schema"}]},
+                    {"name": "date", "restrictions": [{"schema_name": "degree schema"}]}, 
+                    {"name": "degree", "restrictions": [{"schema_name": "degree schema"}]}, 
+                ]
+                proof_predicates = []
+                proof_request = {
+                    "name": "Proof of Education",
+                    "version": "1.0",
+                    "connection_id": agent.connection_id,
+                    "requested_attributes": proof_attrs,
+                    "requested_predicates": proof_predicates,
+                }
+                # this sends the request to our agent, which forwards it to Alice (based on the connection_id)
+                await agent.admin_POST(
+                    "/presentation_exchange/send_request", proof_request
+                )
                 
 
             elif option == "3":
