@@ -101,6 +101,8 @@ class CredentialManager:
             # request yet. Wait up to 30 seconds for that to be populated, then
             # move on and replace it as the cached credential exchange
             lookup_start = time.perf_counter()
+            source_credential_exchange = None
+            """
             while True:
                 try:
                     (
@@ -124,6 +126,7 @@ class CredentialManager:
                     source_credential_exchange = None
                     break
                 await asyncio.sleep(0.3)
+            """
 
         if source_credential_exchange:
 
