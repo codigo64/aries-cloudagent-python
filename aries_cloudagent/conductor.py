@@ -268,6 +268,7 @@ class Conductor:
             parsed_msg, delivery = await self.message_serializer.parse_message(
                 self.context, message_body, transport_type
             )
+            self.logger.info("parsed message: %s delivery: %s", str(parsed_msg, delivery))
         except MessageParseError:
             self.logger.exception("Error expanding message")
             raise
