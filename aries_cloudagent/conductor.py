@@ -263,6 +263,7 @@ class Conductor:
 
         """
 
+        print(datetime.now(), ">>> conductor.message_serializer.parse_message().")
         try:
             parsed_msg, delivery = await self.message_serializer.parse_message(
                 self.context, message_body, transport_type
@@ -270,11 +271,14 @@ class Conductor:
         except MessageParseError:
             self.logger.exception("Error expanding message")
             raise
+        print(datetime.now(), "<<< conductor.message_serializer.parse_message().")
 
         connection_mgr = ConnectionManager(self.context)
+        print(datetime.now(), ">>> conductor.connection_mgr.find_message_connection().")
         connection = await connection_mgr.find_message_connection(delivery)
         if connection:
             delivery.connection_id = connection.connection_id
+        print(datetime.now(), "<<< conductor.connection_mgr.find_message_connection().")
 
         if single_response and not socket_id:
             # if transport wasn't a socket, make a virtual socket used for responses
@@ -308,17 +312,22 @@ class Conductor:
                 delivery.transport_type,
             )
 
+        print(datetime.now(), ">>> conductor.dispatcher.dispatch().")
         handler_done = await self.dispatcher.dispatch(
             parsed_msg, delivery, connection, self.outbound_message_router
         )
+        print(datetime.now(), "<<< conductor.dispatcher.dispatch().")
+
         return asyncio.ensure_future(self.complete_dispatch(handler_done, socket))
 
     async def complete_dispatch(self, dispatch: asyncio.Future, socket: SocketInfo):
         """Wait for the dispatch to complete and perform final actions."""
+        print(datetime.now(), ">>> conductor.dispatcher.complete_dispatch().")
         await dispatch
         await self.queue_processing(socket)
         if socket:
             socket.dispatch_complete()
+        print(datetime.now(), "<<< conductor.dispatcher.complete_dispatch().")
 
     async def queue_processing(self, socket: SocketInfo):
         """
@@ -333,6 +342,7 @@ class Conductor:
             and not socket.closed
             and self.undelivered_queue
         ):
+            print(datetime.now(), ">>> conductor.queue_processing().")
             for key in socket.reply_verkeys:
                 if not isinstance(key, str):
                     key = key.value
@@ -349,6 +359,7 @@ class Conductor:
                                 key, undelivered_message
                             )
                             await socket.send(undelivered_message)
+            print(datetime.now(), "<<< conductor.queue_processing().")
 
     async def get_connection_target(
         self, connection_id: str, context: InjectionContext = None
