@@ -272,14 +272,18 @@ class Conductor:
         except MessageParseError:
             self.logger.exception("Error expanding message")
             raise
-        self.logger.info("<<< conductor.message_serializer.parse_message().")
+        if '~thread' in parsed_msg and 'thid' in parsed_msg['~thread']:
+            msg_thread_id = parsed_msg['~thread']['thid']
+        else:
+            msg_thread_id = ''
+        self.logger.info("<<< conductor.message_serializer.parse_message(). %s", msg_thread_id)
 
         connection_mgr = ConnectionManager(self.context)
-        self.logger.info(">>> conductor.connection_mgr.find_message_connection().")
+        self.logger.info(">>> conductor.connection_mgr.find_message_connection(). %s", msg_thread_id)
         connection = await connection_mgr.find_message_connection(delivery)
         if connection:
             delivery.connection_id = connection.connection_id
-        self.logger.info("<<< conductor.connection_mgr.find_message_connection().")
+        self.logger.info("<<< conductor.connection_mgr.find_message_connection(). %s", msg_thread_id)
 
         if single_response and not socket_id:
             # if transport wasn't a socket, make a virtual socket used for responses
