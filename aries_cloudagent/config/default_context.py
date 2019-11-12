@@ -32,7 +32,8 @@ class DefaultContextBuilder(ContextBuilder):
     """Default context builder."""
 
     def __init__(self, settings):
-        """Initialize a `BasicOutboundMessageQueue` instance."""
+        """Initialize a `DefaultContextBuilder` instance."""
+        self.settings = settings
         self.logger = logging.getLogger(__name__)
 
     async def build(self) -> InjectionContext:
