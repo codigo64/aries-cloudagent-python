@@ -1,5 +1,7 @@
 """Classes for configuring the default injection context."""
 
+import logging
+
 from .base_context import ContextBuilder
 from .injection_context import InjectionContext
 from .provider import CachedProvider, ClassProvider, StatsProvider
@@ -28,6 +30,10 @@ from ..wallet.provider import WalletProvider
 
 class DefaultContextBuilder(ContextBuilder):
     """Default context builder."""
+
+    def __init__(self):
+        """Initialize a `BasicOutboundMessageQueue` instance."""
+        self.logger = logging.getLogger(__name__)
 
     async def build(self) -> InjectionContext:
         """Build the new injection context."""
@@ -134,6 +140,7 @@ class DefaultContextBuilder(ContextBuilder):
         )
 
         # Set default outbound message queue
+        self.logger.debug(f"Adding a .basic.BasicOutboundMessageQueue to our configuration.")
         context.injector.bind_provider(
             BaseOutboundMessageQueue,
             ClassProvider(
