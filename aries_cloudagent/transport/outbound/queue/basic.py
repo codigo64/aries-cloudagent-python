@@ -14,6 +14,7 @@ class BasicOutboundMessageQueue(BaseOutboundMessageQueue):
         self.queue = self.make_queue()
         self.logger = logging.getLogger(__name__)
         self.stop_event = asyncio.Event()
+        self.logger.debug(f"In .basic.BasicOutboundMessageQueue.__init__()")
 
     def make_queue(self):
         """Create the queue instance."""
@@ -70,6 +71,8 @@ class BasicOutboundMessageQueue(BaseOutboundMessageQueue):
                 return message
             elif not stopped.done():
                 raise asyncio.TimeoutError
+            else:
+                self.logger.debug(f"Failed to dequeue, size is: {queue.qsize()}")
 
         if stop_event.is_set():
             raise asyncio.CancelledError
