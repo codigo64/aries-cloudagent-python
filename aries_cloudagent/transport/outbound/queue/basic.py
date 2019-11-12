@@ -49,11 +49,11 @@ class BasicOutboundMessageQueue(BaseOutboundMessageQueue):
             asyncio.TimeoutError if the timeout is reached
 
         """
-        stop_event, queue = self.stop_event, self.queue
-        if not stop_event.is_set():
+        #stop_event, queue = self.stop_event, self.queue
+        if not self.stop_event.is_set():
             loop = asyncio.get_event_loop()
-            stopped = loop.create_task(stop_event.wait())
-            dequeued = loop.create_task(queue.get())
+            stopped = loop.create_task(self.stop_event.wait())
+            dequeued = loop.create_task(self.queue.get())
             done, pending = await asyncio.wait(
                 (stopped, dequeued),
                 timeout=timeout,
@@ -67,14 +67,14 @@ class BasicOutboundMessageQueue(BaseOutboundMessageQueue):
                     raise dequeued.exception()
                 message = dequeued.result()
                 self.logger.debug(f"Dequeuing message: {message}")
-                self.logger.debug(f"Queue size after dequeue is: {queue.qsize()}")
+                self.logger.debug(f"Queue size after dequeue is: {self.queue.qsize()}")
                 return message
             elif not stopped.done():
                 raise asyncio.TimeoutError
             else:
-                self.logger.debug(f"Failed to dequeue, size is: {queue.qsize()}")
+                self.logger.debug(f"Failed to dequeue, size is: {self.queue.qsize()}")
 
-        if stop_event.is_set():
+        if self.stop_event.is_set():
             raise asyncio.CancelledError
 
         return None
