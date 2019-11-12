@@ -18,7 +18,7 @@ class BasicOutboundMessageQueue(BaseOutboundMessageQueue):
 
     def make_queue(self):
         """Create the queue instance."""
-        return asyncio.Queue(maxsize=1)
+        return asyncio.Queue(maxsize=8)
 
     async def enqueue(self, message):
         """
