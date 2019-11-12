@@ -35,7 +35,7 @@ class DefaultContextBuilder(ContextBuilder):
         """Initialize a `BasicOutboundMessageQueue` instance."""
         self.logger = logging.getLogger(__name__)
 
-    async def build(self) -> InjectionContext:
+    async def build(self, settings) -> InjectionContext:
         """Build the new injection context."""
         context = InjectionContext(settings=self.settings)
         context.settings.set_default("default_label", "Aries Cloud Agent")
