@@ -31,11 +31,11 @@ from ..wallet.provider import WalletProvider
 class DefaultContextBuilder(ContextBuilder):
     """Default context builder."""
 
-    def __init__(self):
+    def __init__(self, settings):
         """Initialize a `BasicOutboundMessageQueue` instance."""
         self.logger = logging.getLogger(__name__)
 
-    async def build(self, settings) -> InjectionContext:
+    async def build(self) -> InjectionContext:
         """Build the new injection context."""
         context = InjectionContext(settings=self.settings)
         context.settings.set_default("default_label", "Aries Cloud Agent")
