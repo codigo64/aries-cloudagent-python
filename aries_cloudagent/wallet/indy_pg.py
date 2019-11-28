@@ -15,8 +15,6 @@ import nacl.encoding
 import nacl.pwhash
 import nacl.utils
 
-from ..postgres import load_postgres_plugin
-
 from .crypto import (
     encode_pack_message,
     decode_pack_message_outer,
@@ -27,9 +25,9 @@ from .indy import IndyWallet
 from .util import b58_to_bytes
 
 
-CHACHAPOLY_KEY_LEN = 32
-CHACHAPOLY_NONCE_LEN = 12
-CHACHAPOLY_TAG_LEN = 16
+CHACHAPOLY_KEY_LEN = nacl.bindings.crypto_aead_chacha20poly1305_ietf_KEYBYTES
+CHACHAPOLY_NONCE_LEN = nacl.bindings.crypto_aead_chacha20poly1305_ietf_NPUBBYTES
+CHACHAPOLY_TAG_LEN = nacl.bindings.crypto_aead_chacha20poly1305_ietf_ABYTES
 ENCRYPTED_KEY_LEN = CHACHAPOLY_NONCE_LEN + CHACHAPOLY_KEY_LEN + CHACHAPOLY_TAG_LEN
 
 
@@ -118,7 +116,6 @@ class WalletConnectionPool:
             )
         return self._handle
 
-    @property
     def connection(self) -> asyncpg.pool.PoolAcquireContext:
         """Return a connection handle."""
         return self.handle.acquire()
@@ -130,12 +127,36 @@ class WalletConnectionPool:
     async def setup(self):
         await self.handle
 
-    async def fetch_keys(
+
+class WalletSession:
+    def __init__(
         self,
+        pool: WalletConnectionPool,
         key_pass: str,
         key_deriv_method: str = IndyWallet.KEY_DERIVATION_ARGON2I_MOD,
-    ) -> StorageKeys:
-        async with self.connection as conn:
+    ):
+        """Initialize a new wallet session."""
+        self._key_pass = key_pass
+        self._key_deriv_method = key_deriv_method
+        self._loop = asyncio.get_event_loop()
+        self._pool = pool
+        self._private_key_cache = {}
+        self._record_type_cache = {}
+        self._storage_keys: StorageKeys = None
+
+    @property
+    def pool(self):
+        return self._pool
+
+    @property
+    def storage_keys(self) -> StorageKeys:
+        return self._storage_keys
+
+    async def run_crypto(self, func):
+        return await self._loop.run_in_executor(None, func)
+
+    async def fetch_storage_keys(self) -> StorageKeys:
+        async with self.pool.connection() as conn:
             metadata_row = await conn.fetchrow("SELECT * FROM metadata")
             metadata_b64 = metadata_row["value"]
             metadata_json = base64.b64decode(metadata_b64)
@@ -147,12 +168,14 @@ class WalletConnectionPool:
                 else None
             )
 
-            if key_deriv_method in (
+            if self._key_deriv_method in (
                 IndyWallet.KEY_DERIVATION_ARGON2I_INT,
                 IndyWallet.KEY_DERIVATION_ARGON2I_MOD,
             ):
-                moderate = key_deriv_method == IndyWallet.KEY_DERIVATION_ARGON2I_MOD
-                key_pass_bin = key_pass.encode("ascii")
+                moderate = (
+                    self._key_deriv_method == IndyWallet.KEY_DERIVATION_ARGON2I_MOD
+                )
+                key_pass_bin = self._key_pass.encode("ascii")
                 master_key = nacl.pwhash.argon2i.kdf(
                     CHACHAPOLY_KEY_LEN,
                     key_pass_bin,
@@ -183,6 +206,14 @@ class WalletConnectionPool:
             ciphertext, None, nonce, key
         )
 
+    def decrypt_record_value(
+        cls, enc_record_key: bytes, enc_record_value: bytes, value_key: bytes
+    ):
+        if not enc_record_value:
+            return None
+        record_key = cls.decrypt_merged(enc_record_key, value_key)
+        return cls.decrypt_merged(enc_record_value, record_key)
+
     @classmethod
     def decrypt_tags(cls, tags: list, name_key: bytes, value_key: bytes = None):
         for tag in tags:
@@ -196,8 +227,7 @@ class WalletConnectionPool:
 
     @classmethod
     def decrypt_item(cls, row: dict, keys: StorageKeys):
-        value_key = cls.decrypt_merged(row["key"], keys.value_key)
-        value = cls.decrypt_merged(row["value"], value_key) if row["value"] else None
+        value = cls.decrypt_record_value(row["key"], row["value"], keys.value_key)
         try:
             value = json.loads(value)
         except json.JSONDecodeError:
@@ -234,8 +264,32 @@ class WalletConnectionPool:
         )
         return nonce + ciphertext
 
-    async def fetch_items(self, keys: StorageKeys):
-        async with self.connection as conn:
+    async def encrypt_record_type(self, record_type: str):
+        keys = self._storage_keys
+        if record_type not in self._record_type_cache:
+            self._record_type_cache[record_type] = await self.run_crypto(
+                lambda: base64.b64encode(
+                    self.encrypt_merged(
+                        record_type.encode("ascii"), keys.type_key, keys.item_hmac_key
+                    )
+                ),
+            )
+        return self._record_type_cache[record_type]
+
+    async def encrypt_record_name(self, record_name: str):
+        keys = self._storage_keys
+        return await self.run_crypto(
+            lambda: base64.b64encode(
+                self.encrypt_merged(
+                    record_name.encode("ascii"), keys.name_key, keys.item_hmac_key
+                )
+            ),
+        )
+
+    async def fetch_items(self, keys: StorageKeys = None):
+        if not keys:
+            keys = self._storage_keys
+        async with self.pool.connection() as conn:
             rows = await conn.fetch(
                 """
                 SELECT id, type, name, value, key,
@@ -257,20 +311,11 @@ class WalletConnectionPool:
                 # pprint.pprint(result, indent=2)
                 # print()
 
-    async def fetch_record_value(
-        self, keys: StorageKeys, record_type: str, record_name: str
-    ):
-        enc_type = base64.b64encode(
-            self.encrypt_merged(
-                record_type.encode("ascii"), keys.type_key, keys.item_hmac_key
-            )
-        )
-        enc_name = base64.b64encode(
-            self.encrypt_merged(
-                record_name.encode("ascii"), keys.name_key, keys.item_hmac_key
-            )
-        )
-        async with self.connection as conn:
+    async def fetch_record_value(self, record_type: str, record_name: str):
+        keys = self._storage_keys
+        enc_type = await self.encrypt_record_type(record_type)
+        enc_name = await self.encrypt_record_name(record_name)
+        async with self.pool.connection() as conn:
             row = await conn.fetchrow(
                 "SELECT value, key FROM items WHERE type=$1 AND name=$2",
                 enc_type,
@@ -278,11 +323,29 @@ class WalletConnectionPool:
             )
             if not row:
                 return None
-            value_key = self.decrypt_merged(row["key"], keys.value_key)
-            value = (
-                self.decrypt_merged(row["value"], value_key) if row["value"] else None
-            )
-            return value
+            if row["value"]:
+                return await self.run_crypto(
+                    lambda: self.decrypt_record_value(
+                        row["key"], row["value"], keys.value_key
+                    ),
+                )
+
+    async def get_private_key(self, verkey: str) -> bytes:
+        if verkey in self._private_key_cache:
+            return self._private_key_cache[verkey]
+        value = await self.fetch_record_value("Indy::Key", verkey)
+        if value:
+            self._private_key_cache[verkey] = b58_to_bytes(json.loads(value)["signkey"])
+            return self._private_key_cache[verkey]
+
+    async def __aenter__(self):
+        await self._pool.setup()
+        if not self._storage_keys:
+            self._storage_keys = await self.fetch_storage_keys()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
 
 
 class IndyPgWallet(IndyWallet):
@@ -292,8 +355,9 @@ class IndyPgWallet(IndyWallet):
 
     def __init__(self, config: dict = None):
         """Initialize the Indy postgres wallet instance."""
-        load_postgres_plugin()
-        super().__init__(config)
+        if "storage_type" in config:
+            del config["storage_type"]
+        super(IndyPgWallet, self).__init__(config)
         if not self._storage_config:
             raise WalletError("Missing postgres wallet config")
         try:
@@ -306,29 +370,23 @@ class IndyPgWallet(IndyWallet):
         except json.JSONDecodeError:
             raise WalletError("Error parsing postgres wallet credentials")
         self._pool = WalletConnectionPool(pg_config, pg_creds)
-        self._storage_keys: StorageKeys = None
-        self.key_cache = {}
+        self._session: WalletSession = None
         self.test = 1
 
     @property
     def pool(self):
         return self._pool
 
-    async def get_storage_keys(self) -> StorageKeys:
-        if not self._storage_keys:
-            await self._pool.setup()
-            self._storage_keys = await self._pool.fetch_keys(
-                self._key, self._key_derivation_method
+    def wallet_session(self) -> WalletSession:
+        if not self._session:
+            self._session = WalletSession(
+                self.pool, self._key, self._key_derivation_method
             )
-        return self._storage_keys
+        return self._session
 
-    async def get_private_key(self, keys: StorageKeys, verkey: str) -> bytes:
-        if verkey in self.key_cache:
-            return self.key_cache[verkey]
-        value = await self.pool.fetch_record_value(keys, "Indy::Key", verkey)
-        if value:
-            self.key_cache[verkey] = b58_to_bytes(json.loads(value)["signkey"])
-            return self.key_cache[verkey]
+    async def print_all(self):
+        keys = await self.get_storage_keys()
+        await self.pool.fetch_items(keys)
 
     async def pack_message(
         self, message: str, to_verkeys: Sequence[str], from_verkey: str = None
@@ -345,18 +403,17 @@ class IndyPgWallet(IndyWallet):
             The packed message
 
         """
-        keys = await self.get_storage_keys()
         if self.test:
-            from_secret = await self.get_private_key(keys, from_verkey)
-            if from_secret:
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: encode_pack_message(
-                        message, map(b58_to_bytes, to_verkeys), from_secret
-                    ),
-                )
-            else:
-                raise WalletError("failed loading private key")
+            async with self.wallet_session() as session:
+                from_secret = await session.get_private_key(from_verkey)
+                if from_secret:
+                    result = await session.run_crypto(
+                        lambda: encode_pack_message(
+                            message, map(b58_to_bytes, to_verkeys), from_secret
+                        ),
+                    )
+                else:
+                    raise WalletError("failed loading private key")
         else:
             result = await super().pack_message(message, to_verkeys, from_verkey)
         return result
@@ -373,18 +430,20 @@ class IndyPgWallet(IndyWallet):
 
         """
         if self.test:
-            keys = await self.get_storage_keys()
             wrapper, recips, is_auth = decode_pack_message_outer(enc_message)
-            for recip_vk, sender_cek in recips.items():
-                recip_secret = await self.get_private_key(keys, recip_vk)
-                if recip_secret:
-                    payload, sender_vk = await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: decode_pack_message_payload(
-                            wrapper, sender_cek, recip_secret
-                        ),
-                    )
-                    return payload, sender_vk, recip_vk
+            async with self.wallet_session() as session:
+                for recip_vk, sender_cek in recips.items():
+                    recip_secret = await session.get_private_key(recip_vk)
+                    if recip_secret:
+                        (
+                            payload,
+                            sender_vk,
+                        ) = await session.run_crypto(
+                            lambda: decode_pack_message_payload(
+                                wrapper, sender_cek, recip_secret
+                            ),
+                        )
+                        return payload, sender_vk, recip_vk
             raise ValueError(
                 "No corresponding recipient key found in {}".format(tuple(recips))
             )
