@@ -13,7 +13,6 @@ from ..holder.base import BaseHolder
 from ..verifier.base import BaseVerifier
 from ..messaging.plugin_registry import PluginRegistry
 from ..messaging.protocol_registry import ProtocolRegistry
-from ..messaging.serializer import MessageSerializer
 from ..protocols.actionmenu.base_service import BaseMenuService
 from ..protocols.actionmenu.driver_service import DriverMenuService
 from ..protocols.introduction.base_service import BaseIntroductionService
@@ -21,7 +20,8 @@ from ..protocols.introduction.demo_service import DemoIntroductionService
 from ..stats import Collector
 from ..storage.base import BaseStorage
 from ..storage.provider import StorageProvider
-from ..transport.outbound.queue.base import BaseOutboundMessageQueue
+from ..transport.pack_format import PackWireFormat
+from ..transport.wire_format import BaseWireFormat
 from ..wallet.base import BaseWallet
 from ..wallet.provider import WalletProvider
 
@@ -35,7 +35,8 @@ class DefaultContextBuilder(ContextBuilder):
         context.settings.set_default("default_label", "Aries Cloud Agent")
 
         if context.settings.get("timing.enabled"):
-            collector = Collector()
+            timing_log = context.settings.get("timing.log_file")
+            collector = Collector(log_path=timing_log)
             context.injector.bind_instance(Collector, collector)
 
         # Shared in-memory cache
@@ -122,23 +123,13 @@ class DefaultContextBuilder(ContextBuilder):
             ),
         )
 
-        # Register message serializer
+        # Register default pack format
         context.injector.bind_provider(
-            MessageSerializer,
+            BaseWireFormat,
             CachedProvider(
                 StatsProvider(
-                    ClassProvider(MessageSerializer),
-                    ("encode_message", "parse_message"),
+                    ClassProvider(PackWireFormat), ("encode_message", "parse_message"),
                 )
-            ),
-        )
-
-        # Set default outbound message queue
-        context.injector.bind_provider(
-            BaseOutboundMessageQueue,
-            ClassProvider(
-                "aries_cloudagent.transport.outbound.queue"
-                + ".basic.BasicOutboundMessageQueue"
             ),
         )
 
