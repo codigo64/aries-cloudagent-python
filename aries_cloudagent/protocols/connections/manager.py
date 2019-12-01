@@ -876,7 +876,7 @@ class ConnectionManager:
             )
             await storage.add_record(record)
         else:
-            await storage.update_record_value(record, did_doc.value)
+            await storage.update_record_value(record, did_doc.to_json())
         await self.remove_keys_for_did(did_doc.did)
         for key in did_doc.pubkey.values():
             if key.controller == did_doc.did:
