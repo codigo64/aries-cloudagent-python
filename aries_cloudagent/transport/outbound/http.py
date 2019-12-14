@@ -31,7 +31,7 @@ class HttpTransport(BaseOutboundTransport):
                 StatsTracer(self.collector, "outbound-http:")
             ]
         session_args["cookie_jar"] = DummyCookieJar()
-        session_args["connector"] = self.connector
+        #session_args["connector"] = self.connector
         self.client_session = ClientSession(**session_args)
         return self
 
