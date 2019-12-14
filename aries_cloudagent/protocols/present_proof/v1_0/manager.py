@@ -4,7 +4,7 @@ import json
 import logging
 
 from ....config.injection_context import InjectionContext
-from ....error import BaseError
+from ....core.error import BaseError
 from ....holder.base import BaseHolder
 from ....ledger.base import BaseLedger
 from ....messaging.decorators.attach_decorator import AttachDecorator
@@ -223,29 +223,28 @@ class PresentationManager:
         Args:
             presentation_exchange_record: Record to update
             requested_credentials: Indy formatted requested_credentials
+            comment: optional human-readable comment
 
-            e.g.,
+        Example `requested_credentials` format:
 
-            ::
+        ::
 
-                {
-                    "self_attested_attributes": {
-                        "j233ffbc-bd35-49b1-934f-51e083106f6d": "value"
-                    },
-                    "requested_attributes": {
-                        "6253ffbb-bd35-49b3-934f-46e083106f6c": {
-                            "cred_id": "5bfa40b7-062b-4ae0-a251-a86c87922c0e",
-                            "revealed": true
-                        }
-                    },
-                    "requested_predicates": {
-                        "bfc8a97d-60d3-4f21-b998-85eeabe5c8c0": {
-                            "cred_id": "5bfa40b7-062b-4ae0-a251-a86c87922c0e"
-                        }
+            {
+                "self_attested_attributes": {
+                    "j233ffbc-bd35-49b1-934f-51e083106f6d": "value"
+                },
+                "requested_attributes": {
+                    "6253ffbb-bd35-49b3-934f-46e083106f6c": {
+                        "cred_id": "5bfa40b7-062b-4ae0-a251-a86c87922c0e",
+                        "revealed": true
+                    }
+                },
+                "requested_predicates": {
+                    "bfc8a97d-60d3-4f21-b998-85eeabe5c8c0": {
+                        "cred_id": "5bfa40b7-062b-4ae0-a251-a86c87922c0e"
                     }
                 }
-
-            comment: optional human-readable comment
+            }
 
         Returns:
             A tuple (updated presentation exchange record, presentation message)
@@ -334,12 +333,15 @@ class PresentationManager:
         """
         presentation = self.context.message.indy_proof()
         thread_id = self.context.message._thread_id
+        connection_id_filter = (
+            {"connection_id": self.context.connection_record.connection_id}
+            if self.context.connection_record is not None
+            else None
+        )
         (
             presentation_exchange_record
         ) = await V10PresentationExchange.retrieve_by_tag_filter(
-            self.context,
-            {"thread_id": thread_id},
-            {"connection_id": self.context.connection_record.connection_id},
+            self.context, {"thread_id": thread_id}, connection_id_filter
         )
 
         presentation_exchange_record.presentation = presentation
@@ -433,7 +435,7 @@ class PresentationManager:
         else:
             self._logger.warning(
                 "Configuration has no BaseResponder: cannot ack presentation on %s",
-                presentation_exchange_record.thread_id
+                presentation_exchange_record.thread_id,
             )
 
     async def receive_presentation_ack(self):
@@ -459,8 +461,7 @@ class PresentationManager:
         )
 
         await presentation_exchange_record.save(
-            self.context,
-            reason="receive presentation ack",
+            self.context, reason="receive presentation ack"
         )
 
         return presentation_exchange_record

@@ -12,17 +12,16 @@ import aiohttp_cors
 from marshmallow import fields, Schema
 
 from ..config.injection_context import InjectionContext
-from ..messaging.plugin_registry import PluginRegistry
+from ..core.plugin_registry import PluginRegistry
 from ..messaging.responder import BaseResponder
-from ..messaging.task_queue import TaskQueue
-from ..stats import Collector
 from ..transport.queue.basic import BasicMessageQueue
 from ..transport.outbound.message import OutboundMessage
+from ..utils.stats import Collector
+from ..utils.task_queue import TaskQueue
+from ..version import __version__
 
 from .base_server import BaseAdminServer
 from .error import AdminSetupError
-
-from ..version import __version__
 
 LOGGER = logging.getLogger(__name__)
 
@@ -81,14 +80,16 @@ class WebhookTarget:
     """Class for managing webhook target information."""
 
     def __init__(
-        self, endpoint: str, topic_filter: Sequence[str] = None, retries: int = None
+        self,
+        endpoint: str,
+        topic_filter: Sequence[str] = None,
+        max_attempts: int = None,
     ):
         """Initialize the webhook target."""
         self.endpoint = endpoint
+        self.max_attempts = max_attempts
         self._topic_filter = None
-        self.retries = retries
-        # call setter
-        self.topic_filter = topic_filter
+        self.topic_filter = topic_filter  # call setter
 
     @property
     def topic_filter(self) -> Set[str]:
@@ -176,6 +177,8 @@ class AdminServer(BaseAdminServer):
 
             middlewares.append(check_token)
 
+        collector: Collector = await self.context.inject(Collector, required=False)
+
         if self.task_queue:
 
             @web.middleware
@@ -185,14 +188,11 @@ class AdminServer(BaseAdminServer):
 
             middlewares.append(apply_limiter)
 
-        stats: Collector = await self.context.inject(Collector, required=False)
-        if stats:
+        elif collector:
 
             @web.middleware
             async def collect_stats(request, handler):
-                handler = stats.wrap_coro(
-                    handler, [handler.__qualname__, "any-admin-request"]
-                )
+                handler = collector.wrap_coro(handler, [handler.__qualname__])
                 return await handler(request)
 
             middlewares.append(collect_stats)
@@ -231,7 +231,7 @@ class AdminServer(BaseAdminServer):
         for route in app.router.routes():
             cors.add(route)
         # get agent label
-        agent_label = self.context.settings.get("default_label"),
+        agent_label = self.context.settings.get("default_label")
         version_string = f"v{__version__}"
 
         setup_aiohttp_apispec(
@@ -288,7 +288,6 @@ class AdminServer(BaseAdminServer):
         registry: PluginRegistry = await self.context.inject(
             PluginRegistry, required=False
         )
-        print(registry)
         plugins = registry and sorted(registry.plugin_names) or []
         return web.json_response({"result": plugins})
 
@@ -401,11 +400,14 @@ class AdminServer(BaseAdminServer):
         return ws
 
     def add_webhook_target(
-        self, target_url: str, topic_filter: Sequence[str] = None, retries: int = None
+        self,
+        target_url: str,
+        topic_filter: Sequence[str] = None,
+        max_attempts: int = None,
     ):
         """Add a webhook target."""
         self.webhook_targets[target_url] = WebhookTarget(
-            target_url, topic_filter, retries
+            target_url, topic_filter, max_attempts
         )
 
     def remove_webhook_target(self, target_url: str):
@@ -418,7 +420,9 @@ class AdminServer(BaseAdminServer):
         if self.webhook_router:
             for idx, target in self.webhook_targets.items():
                 if not target.topic_filter or topic in target.topic_filter:
-                    self.webhook_router(topic, payload, target.endpoint, target.retries)
+                    self.webhook_router(
+                        topic, payload, target.endpoint, target.max_attempts
+                    )
 
         for queue in self.websocket_queues.values():
             await queue.enqueue({"topic": topic, "payload": payload})
