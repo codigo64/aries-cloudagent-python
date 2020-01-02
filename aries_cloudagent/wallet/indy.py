@@ -142,7 +142,6 @@ class IndyWallet(BaseWallet):
         ret = {
             "key": self._key,
             "key_derivation_method": self._key_derivation_method,
-            # storage_credentials
         }
         if self._storage_creds is not None:
             ret["storage_credentials"] = json.loads(self._storage_creds)

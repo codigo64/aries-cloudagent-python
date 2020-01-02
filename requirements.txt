@@ -3,6 +3,7 @@ aiohttp-apispec==1.1.2
 aiohttp-cors~=0.7.0
 apispec==2.0.2
 async-timeout~=3.0.1
+asyncpg~=0.20.0
 base58~=1.0.3
 Markdown~=3.1.1
 marshmallow==3.0.0

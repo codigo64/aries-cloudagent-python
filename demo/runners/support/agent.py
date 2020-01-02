@@ -125,7 +125,9 @@ class DemoAgent:
             else seed
         )
         self.storage_type = params.get("storage_type")
-        self.wallet_type = params.get("wallet_type", "indy")
+        self.wallet_type = params.get(
+            "wallet_type", "indy_pg" if self.postgres else "indy"
+        )
         self.wallet_name = (
             params.get("wallet_name") or self.ident.lower().replace(" ", "") + rand_name
         )
@@ -184,7 +186,7 @@ class DemoAgent:
         if self.postgres:
             result.extend(
                 [
-                    ("--wallet-storage-type", "postgres_storage"),
+                    # ("--wallet-storage-type", "postgres_storage"),
                     ("--wallet-storage-config", json.dumps(self.postgres_config)),
                     ("--wallet-storage-creds", json.dumps(self.postgres_creds)),
                 ]

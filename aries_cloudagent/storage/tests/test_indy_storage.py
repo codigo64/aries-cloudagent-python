@@ -1,9 +1,9 @@
 import pytest
 import os
 
-from aries_cloudagent.wallet.indy import IndyWallet
 from aries_cloudagent.storage.indy import IndyStorage
 from aries_cloudagent.storage.record import StorageRecord
+from aries_cloudagent.wallet.indy import IndyWallet
 
 from . import test_basic_storage
 

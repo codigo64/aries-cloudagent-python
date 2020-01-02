@@ -5,6 +5,7 @@ import json
 from typing import Callable, Optional, Sequence, Tuple
 
 from marshmallow import fields, Schema, ValidationError
+import msgpack
 import nacl.bindings
 import nacl.exceptions
 import nacl.utils
@@ -158,6 +159,101 @@ def verify_signed_message(signed: bytes, verkey: bytes) -> bool:
     return True
 
 
+def anon_crypt_message(message: bytes, to_verkey: bytes) -> bytes:
+    """
+    Apply anon_crypt to a binary message.
+
+    Args:
+        message: The message to encrypt
+        to_verkey: The verkey to encrypt the message for
+
+    Returns:
+        The anon encrypted message
+
+    """
+    pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(to_verkey)
+    enc_message = nacl.bindings.crypto_box_seal(message, pk)
+    return enc_message
+
+
+def anon_decrypt_message(enc_message: bytes, secret: bytes) -> bytes:
+    """
+    Apply anon_decrypt to a binary message.
+
+    Args:
+        enc_message: The encrypted message
+        secret: The seed to use
+
+    Returns:
+        The decrypted message
+
+    """
+    sign_pk, sign_sk = create_keypair(secret)
+    pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(sign_pk)
+    sk = nacl.bindings.crypto_sign_ed25519_sk_to_curve25519(sign_sk)
+
+    message = nacl.bindings.crypto_box_seal_open(enc_message, pk, sk)
+    return message
+
+
+def auth_crypt_message(message: bytes, to_verkey: bytes, from_secret: bytes) -> bytes:
+    """
+    Apply auth_crypt to a binary message.
+
+    Args:
+        message: The message to encrypt
+        to_verkey: To recipient's verkey
+        from_secret: The seed to use
+
+    Returns:
+        The encrypted message
+
+    """
+    nonce = nacl.utils.random(nacl.bindings.crypto_box_NONCEBYTES)
+    target_pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(to_verkey)
+    sender_pk, sender_sk = create_keypair(from_secret)
+    sk = nacl.bindings.crypto_sign_ed25519_sk_to_curve25519(sender_sk)
+    enc_body = nacl.bindings.crypto_box(message, nonce, target_pk, sk)
+    combo_box = OrderedDict(
+        [
+            ("msg", bytes_to_b64(enc_body)),
+            ("sender", bytes_to_b58(sender_pk)),
+            ("nonce", bytes_to_b64(nonce)),
+        ]
+    )
+    combo_box_bin = msgpack.packb(combo_box, use_bin_type=True)
+    enc_message = nacl.bindings.crypto_box_seal(combo_box_bin, target_pk)
+    return enc_message
+
+
+def auth_decrypt_message(enc_message: bytes, secret: bytes) -> Tuple[bytes, str]:
+    """
+    Apply auth_decrypt to a binary message.
+
+    Args:
+        enc_message: The encrypted message
+        secret: Secret for signing keys
+
+    Returns:
+        A tuple of (decrypted message, sender verkey)
+
+    """
+    sign_pk, sign_sk = create_keypair(secret)
+    pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(sign_pk)
+    sk = nacl.bindings.crypto_sign_ed25519_sk_to_curve25519(sign_sk)
+    body = nacl.bindings.crypto_box_seal_open(enc_message, pk, sk)
+
+    unpacked = msgpack.unpackb(body, raw=False)
+    sender_vk = unpacked["sender"]
+    nonce = b64_to_bytes(unpacked["nonce"])
+    enc_message = b64_to_bytes(unpacked["msg"])
+    sender_pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(
+        b58_to_bytes(sender_vk)
+    )
+    message = nacl.bindings.crypto_box_open(enc_message, nonce, sender_pk, sk)
+    return message, sender_vk
+
+
 def prepare_pack_recipient_keys(
     to_verkeys: Sequence[bytes], from_secret: bytes = None
 ) -> Tuple[str, bytes]:
@@ -229,59 +325,59 @@ def prepare_pack_recipient_keys(
     return json.dumps(data), cek
 
 
-# def locate_pack_recipient_key(
-#     recipients: Sequence[dict], find_key: Callable
-# ) -> Tuple[bytes, str, str]:
-#     """
-#     Locate pack recipient key.
+def locate_pack_recipient_key(
+    recipients: Sequence[dict], find_key: Callable
+) -> Tuple[bytes, str, str]:
+    """
+    Locate pack recipient key.
 
-#     Decode the encryption key and sender verification key from a
-#     corresponding recipient block, if any is defined.
+    Decode the encryption key and sender verification key from a
+    corresponding recipient block, if any is defined.
 
-#     Args:
-#         recipients: Recipients to locate
-#         find_key: Function used to find private key
+    Args:
+        recipients: Recipients to locate
+        find_key: Function used to find private key
 
-#     Returns:
-#         A tuple of (cek, sender_vk, recip_vk_b58)
+    Returns:
+        A tuple of (cek, sender_vk, recip_vk_b58)
 
-#     Raises:
-#         ValueError: If no corresponding recipient key found
+    Raises:
+        ValueError: If no corresponding recipient key found
 
-#     """
-#     not_found = []
-#     for recip in recipients:
-#         if not recip or "header" not in recip or "encrypted_key" not in recip:
-#             raise ValueError("Invalid recipient header")
+    """
+    not_found = []
+    for recip in recipients:
+        if not recip or "header" not in recip or "encrypted_key" not in recip:
+            raise ValueError("Invalid recipient header")
 
-#         recip_vk_b58 = recip["header"].get("kid")
-#         secret = find_key(recip_vk_b58)
-#         if secret is None:
-#             not_found.append(recip_vk_b58)
-#             continue
-#         recip_vk = b58_to_bytes(recip_vk_b58)
-#         pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(recip_vk)
-#         sk = nacl.bindings.crypto_sign_ed25519_sk_to_curve25519(secret)
+        recip_vk_b58 = recip["header"].get("kid")
+        secret = find_key(recip_vk_b58)
+        if secret is None:
+            not_found.append(recip_vk_b58)
+            continue
+        recip_vk = b58_to_bytes(recip_vk_b58)
+        pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(recip_vk)
+        sk = nacl.bindings.crypto_sign_ed25519_sk_to_curve25519(secret)
 
-#         encrypted_key = b64_to_bytes(recip["encrypted_key"], urlsafe=True)
+        encrypted_key = b64_to_bytes(recip["encrypted_key"], urlsafe=True)
 
-#         nonce_b64 = recip["header"].get("iv")
-#         nonce = b64_to_bytes(nonce_b64, urlsafe=True) if nonce_b64 else None
-#         sender_b64 = recip["header"].get("sender")
-#         enc_sender = b64_to_bytes(sender_b64, urlsafe=True) if sender_b64 else None
+        nonce_b64 = recip["header"].get("iv")
+        nonce = b64_to_bytes(nonce_b64, urlsafe=True) if nonce_b64 else None
+        sender_b64 = recip["header"].get("sender")
+        enc_sender = b64_to_bytes(sender_b64, urlsafe=True) if sender_b64 else None
 
-#         if nonce and enc_sender:
-#             sender_vk_bin = nacl.bindings.crypto_box_seal_open(enc_sender, pk, sk)
-#             sender_vk = sender_vk_bin.decode("ascii")
-#             sender_pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(
-#                 b58_to_bytes(sender_vk_bin)
-#             )
-#             cek = nacl.bindings.crypto_box_open(encrypted_key, nonce, sender_pk, sk)
-#         else:
-#             sender_vk = None
-#             cek = nacl.bindings.crypto_box_seal_open(encrypted_key, pk, sk)
-#         return cek, sender_vk, recip_vk_b58
-#     raise ValueError("No corresponding recipient key found in {}".format(not_found))
+        if nonce and enc_sender:
+            sender_vk_bin = nacl.bindings.crypto_box_seal_open(enc_sender, pk, sk)
+            sender_vk = sender_vk_bin.decode("ascii")
+            sender_pk = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(
+                b58_to_bytes(sender_vk_bin)
+            )
+            cek = nacl.bindings.crypto_box_open(encrypted_key, nonce, sender_pk, sk)
+        else:
+            sender_vk = None
+            cek = nacl.bindings.crypto_box_seal_open(encrypted_key, pk, sk)
+        return cek, sender_vk, recip_vk_b58
+    raise ValueError("No corresponding recipient key found in {}".format(not_found))
 
 
 def encrypt_plaintext(

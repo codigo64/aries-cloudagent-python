@@ -14,6 +14,7 @@ class WalletProvider(BaseProvider):
     WALLET_TYPES = {
         "basic": "aries_cloudagent.wallet.basic.BasicWallet",
         "indy": "aries_cloudagent.wallet.indy.IndyWallet",
+        "indy_pg": "aries_cloudagent.wallet.indy_pg.IndyPgWallet",
     }
 
     async def provide(self, settings: BaseSettings, injector: BaseInjector):
