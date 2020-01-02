@@ -508,6 +508,7 @@ class IndyLedger(BaseLedger):
                 "CL",
                 json.dumps({"support_revocation": False}),
             )
+            print(">>> created and stored cred def", credential_definition_id)
         # If the cred def already exists in the wallet, we need some way of obtaining
         # that cred def id (from schema id passed) since we can now assume we can use
         # it in future operations.
@@ -518,6 +519,7 @@ class IndyLedger(BaseLedger):
                         r"\w*:3:CL:(([1-9][0-9]*)|(.{21,22}:2:.+:[0-9.]+)):\w*",
                         error.message,
                     ).group(0)
+                    print(">>> error cred def already exists", credential_definition_id)
                 # The regex search failed so let the error bubble up
                 except AttributeError:
                     raise LedgerError(
@@ -531,16 +533,21 @@ class IndyLedger(BaseLedger):
         created_cred_def = json.loads(
             credential_definition_json
         ) if credential_definition_json else None
+        print(">>> created_cred_def =", created_cred_def)
         exist_def = await self.fetch_credential_definition(credential_definition_id)
+        print(">>> exist_def =", exist_def)
 
         if created_cred_def:
             if exist_def:
+                print(">>> exist_def[\"value\"]:", exist_def["value"])
+                print(">>> created_cred_def[\"value\"]:", created_cred_def["value"])
                 if exist_def["value"] != created_cred_def["value"]:
                     self.logger.warning(
                         "Ledger definition of cred def %s will be replaced",
                         credential_definition_id,
                     )
                     exist_def = None
+                    print(">>> exist_def set to None")
         else:
             if not exist_def:
                 raise LedgerError(
@@ -549,12 +556,16 @@ class IndyLedger(BaseLedger):
                 )
 
         if not exist_def:
+            print(">>> building and submitting cred def request")
             with IndyErrorHandler("Exception when building cred def request"):
                 request_json = await indy.ledger.build_cred_def_request(
                     public_info.did, credential_definition_json
                 )
             await self._submit(request_json, True, public_did=public_info.did)
+            print(">>> submitted new cred def to ledger")
         else:
+            print(">>> Ledger definition of cred def already exists",
+                  credential_definition_id)
             self.logger.warning(
                 "Ledger definition of cred def %s already exists",
                 credential_definition_id,
