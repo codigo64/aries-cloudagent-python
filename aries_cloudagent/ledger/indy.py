@@ -540,7 +540,7 @@ class IndyLedger(BaseLedger):
                         "Ledger definition of cred def %s will be replaced",
                         credential_definition_id,
                     )
-                    exist_def = None
+                    #exist_def = None
         else:
             if not exist_def:
                 raise LedgerError(
