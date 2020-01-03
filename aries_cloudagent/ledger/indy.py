@@ -513,8 +513,11 @@ class IndyLedger(BaseLedger):
             print(">>> checking for existance of", credential_definition_id)
             exist_def = await self.fetch_credential_definition(credential_definition_id)
             if exist_def:
-                print("   >>> found!")
+                print("   >>> found!", credential_definition_id)
                 break
+
+        print(">>> continuing with cred def", credential_definition_id)
+        print(">>> continuing with cred def", exist_def)
 
         if not exist_def:
             # TODO: add support for tag, sig type, and config
@@ -603,6 +606,7 @@ class IndyLedger(BaseLedger):
             "cred_def_id": credential_definition_id,
             "epoch": str(int(time())),
         }
+        print(">>> creating storage record with", credential_definition_id, cred_def_tags)
         record = StorageRecord(
             CRED_DEF_SENT_RECORD_TYPE, credential_definition_id, cred_def_tags,
         )
