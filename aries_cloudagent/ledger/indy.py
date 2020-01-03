@@ -500,8 +500,8 @@ class IndyLedger(BaseLedger):
         print(">>> schema is", schema)
         print(">>> tag is", tag)
         print(">>> potential cred def id's are:")
-        print("    >>>", public_info.did + ':3:CL:' + str(schema.id) + ':tag')
-        print("    >>>", public_info.did + ':3:CL:' + str(schema.id) + ':default')
+        print("    >>>", public_info.did + ':3:CL:' + str(schema['id']) + ':tag')
+        print("    >>>", public_info.did + ':3:CL:' + str(schema['id']) + ':default')
 
         # TODO: add support for tag, sig type, and config
         try:
