@@ -495,6 +495,14 @@ class IndyLedger(BaseLedger):
         schema = await self.get_schema(schema_id)
         credential_definition_json = None
 
+        print(">>> public did is", public_info)
+        print(">>> schema id is", schema_id)
+        print(">>> schema is", schema)
+        print(">>> tag is", tag)
+        print(">>> potential cred def id's are:")
+        print("    >>>", public_info.did + ':3:CL:' + str(schema.id) + ':tag')
+        print("    >>>", public_info.did + ':3:CL:' + str(schema.id) + ':default')
+
         # TODO: add support for tag, sig type, and config
         try:
             (
@@ -546,8 +554,8 @@ class IndyLedger(BaseLedger):
                         "Ledger definition of cred def %s will be replaced",
                         credential_definition_id,
                     )
-                    #exist_def = None
-                    print(">>> exist_def NOT set to None")
+                    exist_def = None
+                    print(">>> exist_def set to None")
         else:
             if not exist_def:
                 raise LedgerError(
