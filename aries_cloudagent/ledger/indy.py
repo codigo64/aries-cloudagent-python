@@ -500,42 +500,56 @@ class IndyLedger(BaseLedger):
         print(">>> schema is", schema)
         print(">>> tag is", tag)
         print(">>> potential cred def id's are:")
-        print("    >>>", public_info.did + ':3:CL:' + str(schema['id']) + ':tag')
-        print("    >>>", public_info.did + ':3:CL:' + str(schema['id']) + ':default')
+        print("    >>>", public_info.did + ':3:CL:' + str(schema['seqNo']) + ':tag')
+        print("    >>>", public_info.did + ':3:CL:' + str(schema['seqNo']) + ':default')
 
-        # TODO: add support for tag, sig type, and config
-        try:
-            (
-                credential_definition_id,
-                credential_definition_json,
-            ) = await indy.anoncreds.issuer_create_and_store_credential_def(
-                self.wallet.handle,
-                public_info.did,
-                json.dumps(schema),
-                tag or "default",
-                "CL",
-                json.dumps({"support_revocation": False}),
-            )
-            print(">>> created and stored cred def", credential_definition_id)
-        # If the cred def already exists in the wallet, we need some way of obtaining
-        # that cred def id (from schema id passed) since we can now assume we can use
-        # it in future operations.
-        except IndyError as error:
-            if error.error_code == ErrorCode.AnoncredsCredDefAlreadyExistsError:
-                try:
-                    credential_definition_id = re.search(
-                        r"\w*:3:CL:(([1-9][0-9]*)|(.{21,22}:2:.+:[0-9.]+)):\w*",
-                        error.message,
-                    ).group(0)
-                    print(">>> error cred def already exists", credential_definition_id)
-                # The regex search failed so let the error bubble up
-                except AttributeError:
-                    raise LedgerError(
-                        "Previous credential definition exists, but ID could "
-                        "not be extracted"
-                    )
-            else:
-                raise IndyErrorHandler.wrap_error(error) from error
+        # check if there's a cred def on the ledger already
+        if tag:
+            tags = [tag,]
+        else:
+            tags = ['tag', 'default',]
+        for test_tag in tags:
+            credential_definition_id = public_info.did + ':3:CL:' + str(schema['seqNo']) + ':' + test_tag
+            print(">>> checking for existance of", credential_definition_id)
+            exist_def = await self.fetch_credential_definition(credential_definition_id)
+            if exist_def:
+                print("   >>> found!")
+                break
+
+        if not exist_def:
+            # TODO: add support for tag, sig type, and config
+            try:
+                (
+                    credential_definition_id,
+                    credential_definition_json,
+                ) = await indy.anoncreds.issuer_create_and_store_credential_def(
+                    self.wallet.handle,
+                    public_info.did,
+                    json.dumps(schema),
+                    tag or "default",
+                    "CL",
+                    json.dumps({"support_revocation": False}),
+                )
+                print(">>> created and stored cred def", credential_definition_id)
+            # If the cred def already exists in the wallet, we need some way of obtaining
+            # that cred def id (from schema id passed) since we can now assume we can use
+            # it in future operations.
+            except IndyError as error:
+                if error.error_code == ErrorCode.AnoncredsCredDefAlreadyExistsError:
+                    try:
+                        credential_definition_id = re.search(
+                            r"\w*:3:CL:(([1-9][0-9]*)|(.{21,22}:2:.+:[0-9.]+)):\w*",
+                            error.message,
+                        ).group(0)
+                        print(">>> error cred def already exists", credential_definition_id)
+                    # The regex search failed so let the error bubble up
+                    except AttributeError:
+                        raise LedgerError(
+                            "Previous credential definition exists, but ID could "
+                            "not be extracted"
+                        )
+                else:
+                    raise IndyErrorHandler.wrap_error(error) from error
 
         # check if the cred def already exists on the ledger
         created_cred_def = json.loads(
