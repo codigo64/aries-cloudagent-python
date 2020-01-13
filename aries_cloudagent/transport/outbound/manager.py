@@ -408,7 +408,9 @@ class OutboundTransportManager:
         if completed.exc_info:
             queued.error = completed.exc_info
             LOGGER.exception(
-                "Outbound message could not be delivered", exc_info=queued.error,
+                "Outbound message could not be delivered to %s", 
+                queued.endpoint, 
+                exc_info=queued.error,
             )
 
             if queued.retries:
