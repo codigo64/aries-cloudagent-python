@@ -167,6 +167,9 @@ class IndyHolder(BaseHolder):
 
         """
 
+        print(">>> prover_search_credentials_for_proof_req")
+        print("    presentation_request", json.dumps(presentation_request))
+        print("    extra_query", json.dumps(extra_query))
         search_handle = await indy.anoncreds.prover_search_credentials_for_proof_req(
             self.wallet.handle,
             json.dumps(presentation_request),
