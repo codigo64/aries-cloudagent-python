@@ -61,6 +61,8 @@ class HttpTransport(BaseOutboundTransport):
             ) as response:
                 if response.status < 200 or response.status > 299:
                     raise OutboundTransportError("Unexpected response status")
+        except OutboundTransportError as e:
+            raise e
         except ClientOSError as e:
             # ignore some errors
             print(">>> check ClientOSError ...")
@@ -70,5 +72,9 @@ class HttpTransport(BaseOutboundTransport):
                 print(">>> ignoring exception", str(e))
             elif "Connection reset by peer" in str(e):
                 print(">>> ignoring exception", str(e))
+            # default is re-raise exception
+            raise OutboundTransportError(str(e))
+        except Exception as e:
+            print(">>> check Exception ...")
             # default is re-raise exception
             raise OutboundTransportError(str(e))

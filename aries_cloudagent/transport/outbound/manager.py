@@ -406,16 +406,19 @@ class OutboundTransportManager:
     def finished_deliver(self, queued: QueuedOutboundMessage, completed: CompletedTask):
         """Handle completion of queued message delivery."""
         if completed.exc_info:
+            print(">>> Handle completion of queued message delivery.")
             queued.error = completed.exc_info
             LOGGER.exception(
                 "Outbound message could not be delivered", exc_info=queued.error,
             )
 
             if queued.retries:
+                print(">>> Re-queue ...")
                 queued.retries -= 1
                 queued.state = QueuedOutboundMessage.STATE_RETRY
                 queued.retry_at = time.perf_counter() + 10
             else:
+                print(">>> NO Re-queue, state is DONE")
                 queued.state = QueuedOutboundMessage.STATE_DONE
         else:
             queued.error = None
