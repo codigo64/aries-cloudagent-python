@@ -4,6 +4,7 @@ import logging
 from typing import Union
 
 from aiohttp import ClientSession, DummyCookieJar, TCPConnector
+from aiohttp.client_exceptions import ClientOSError
 
 from ..stats import StatsTracer
 
@@ -54,8 +55,18 @@ class HttpTransport(BaseOutboundTransport):
             headers["Content-Type"] = "application/ssi-agent-wire"
         else:
             headers["Content-Type"] = "application/json"
-        async with self.client_session.post(
-            endpoint, data=payload, headers=headers
-        ) as response:
-            if response.status < 200 or response.status > 299:
-                raise OutboundTransportError("Unexpected response status")
+        try:
+            async with self.client_session.post(
+                endpoint, data=payload, headers=headers
+            ) as response:
+                if response.status < 200 or response.status > 299:
+                    raise OutboundTransportError("Unexpected response status")
+        except ClientOSError as e:
+            # ignore some errors
+            if "Cannot write to closing transport" in e.message:
+                print(">>> ignoring exception", str(e))
+            elif "Connection reset by peer" in e.message:
+                print(">>> ignoring exception", str(e))
+            else:
+                # default is re-raise exception
+                raise e
