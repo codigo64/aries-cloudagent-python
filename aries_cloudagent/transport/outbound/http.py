@@ -70,6 +70,5 @@ class HttpTransport(BaseOutboundTransport):
                 print(">>> ignoring exception", str(e))
             elif "Connection reset by peer" in str(e):
                 print(">>> ignoring exception", str(e))
-            else:
-                # default is re-raise exception
-                raise e
+            # default is re-raise exception
+            raise OutboundTransportError(str(e))
