@@ -63,7 +63,10 @@ class HttpTransport(BaseOutboundTransport):
                     raise OutboundTransportError("Unexpected response status")
         except ClientOSError as e:
             # ignore some errors
+            print(">>> check ClientOSError ...")
             if "Cannot write to closing transport" in str(e):
+                print(">>> ignoring exception", str(e))
+            elif "Can not write request body" in str(e):
                 print(">>> ignoring exception", str(e))
             elif "Connection reset by peer" in str(e):
                 print(">>> ignoring exception", str(e))
