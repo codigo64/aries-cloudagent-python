@@ -55,26 +55,8 @@ class HttpTransport(BaseOutboundTransport):
             headers["Content-Type"] = "application/ssi-agent-wire"
         else:
             headers["Content-Type"] = "application/json"
-        try:
-            async with self.client_session.post(
-                endpoint, data=payload, headers=headers
-            ) as response:
-                if response.status < 200 or response.status > 299:
-                    raise OutboundTransportError("Unexpected response status")
-        except OutboundTransportError as e:
-            raise e
-        except ClientOSError as e:
-            # ignore some errors
-            print(">>> check ClientOSError ...")
-            if "Cannot write to closing transport" in str(e):
-                print(">>> ignoring exception", str(e))
-            elif "Can not write request body" in str(e):
-                print(">>> ignoring exception", str(e))
-            elif "Connection reset by peer" in str(e):
-                print(">>> ignoring exception", str(e))
-            # default is re-raise exception
-            raise OutboundTransportError(str(e))
-        except Exception as e:
-            print(">>> check Exception ...")
-            # default is re-raise exception
-            raise OutboundTransportError(str(e))
+        async with self.client_session.post(
+            endpoint, data=payload, headers=headers
+        ) as response:
+            if response.status < 200 or response.status > 299:
+                raise OutboundTransportError("Unexpected response status")
