@@ -4,7 +4,6 @@ import logging
 from typing import Union
 
 from aiohttp import ClientSession, DummyCookieJar, TCPConnector
-from aiohttp.client_exceptions import ClientOSError
 
 from ..stats import StatsTracer
 
