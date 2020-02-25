@@ -47,6 +47,21 @@ class AliceAgent(DemoAgent):
         self._connection_ready = asyncio.Future()
         self.cred_state = {}
 
+    async def receive_invite(self, invite, accept: str = "auto"):
+        result = await self.admin_POST(
+            "/connections/receive-invitation", invite, params={"accept": accept}
+        )
+        self.connection_id = result["connection_id"]
+        return self.connection_id
+
+    async def accept_invite(self, conn_id: str):
+        await self.admin_POST(f"/connections/{conn_id}/accept-invitation")
+
+    async def establish_inbound(self, conn_id: str, router_conn_id: str):
+        await self.admin_POST(
+            f"/connections/{conn_id}/establish-inbound/{router_conn_id}"
+        )
+
     async def detect_connection(self):
         await self._connection_ready
 
@@ -168,7 +183,37 @@ class AliceAgent(DemoAgent):
         self.log("Received message:", message["content"])
 
 
-async def input_invitation(agent):
+class RoutingAgent(DemoAgent):
+    def __init__(
+        self, http_port: int, admin_port: int, no_auto: bool = False, **kwargs
+    ):
+        super().__init__(
+            "Routing Agent",
+            http_port,
+            admin_port,
+            prefix="Router",
+            extra_args=[]
+            if no_auto
+            else [
+                "--auto-accept-invites",
+                "--auto-accept-requests",
+                "--auto-store-credential",
+            ],
+            **kwargs,
+        )
+        self.connection_id = None
+        self._connection_ready = asyncio.Future()
+        self.cred_state = {}
+
+    async def get_invite(self, accept: str = "auto"):
+        result = await self.admin_POST(
+            "/connections/create-invitation", params={"accept": accept}
+        )
+        self.connection_id = result["connection_id"]
+        return result["invitation"]
+
+
+async def input_invitation(agent, routing_agent=None):
     async for details in prompt_loop("Invite details: "):
         b64_invite = None
         try:
@@ -202,14 +247,33 @@ async def input_invitation(agent):
                 log_msg("Invalid invitation:", str(e))
 
     with log_timer("Connect duration:"):
-        connection = await agent.admin_POST("/connections/receive-invitation", details)
-        agent.connection_id = connection["connection_id"]
-        log_json(connection, label="Invitation response:")
+        if routing_agent:
+            log_msg("Connect Alice to router ...")
+            log_msg("... get invite from router ...")
+            router_invite = await routing_agent.get_invite()
+            print(router_invite)
+            log_msg("... alice receive invite ...")
+            agent_router_conn_id = await agent.receive_invite(router_invite)
+            log_msg("... wait for connection to router ...")
+            await asyncio.wait_for(agent.detect_connection(), 30)
+            log_msg("... connected!")
 
-        await agent.detect_connection()
+        if routing_agent:
+            log_msg("Connect Alice to Faber via router ...")
+            agent.connection_id = await agent.receive_invite(details, accept="manual")
+            await agent.establish_inbound(agent.connection_id, agent_router_conn_id)
+            await agent.accept_invite(agent.connection_id)
+            await asyncio.wait_for(agent.detect_connection(), 30)
+        else:
+            log_msg("Connect Alice to Faber ...")
+            agent.connection_id = await agent.receive_invite(details)
+
+        log_msg("Connection:", agent.connection_id)
+
+        await asyncio.wait_for(agent.detect_connection(), 30)
 
 
-async def main(start_port: int, no_auto: bool = False, show_timing: bool = False):
+async def main(start_port: int, no_auto: bool = False, show_timing: bool = False, routing: bool = False):
 
     genesis = await default_genesis_txns()
     if not genesis:
@@ -217,6 +281,7 @@ async def main(start_port: int, no_auto: bool = False, show_timing: bool = False
         sys.exit(1)
 
     agent = None
+    alice_router = None
 
     try:
         log_status("#7 Provision an agent and wallet, get back configuration details")
@@ -229,13 +294,24 @@ async def main(start_port: int, no_auto: bool = False, show_timing: bool = False
         )
         await agent.listen_webhooks(start_port + 2)
 
+        if routing:
+            alice_router = RoutingAgent(
+                start_port + 6, start_port + 7, genesis_data=genesis, timing=show_timing
+            )
+            #await alice_router.listen_webhooks(start_port + 8)
+            await alice_router.register_did()
+
         with log_timer("Startup duration:"):
+            if alice_router:
+                await alice_router.start_process()
             await agent.start_process()
         log_msg("Admin url is at:", agent.admin_url)
         log_msg("Endpoint url is at:", agent.endpoint)
+        log_msg("Router Admin url is at:", alice_router.admin_url)
+        log_msg("Router Endpoint url is at:", alice_router.endpoint)
 
         log_status("#9 Input faber.py invitation details")
-        await input_invitation(agent)
+        await input_invitation(agent, alice_router)
 
         async for option in prompt_loop(
             "(3) Send Message (4) Input New Invitation (X) Exit? [3/4/X]: "
@@ -252,7 +328,7 @@ async def main(start_port: int, no_auto: bool = False, show_timing: bool = False
             elif option == "4":
                 # handle new invitation
                 log_status("Input new invitation details")
-                await input_invitation(agent)
+                await input_invitation(agent, alice_router)
 
         if show_timing:
             timing = await agent.fetch_timing()
@@ -266,7 +342,13 @@ async def main(start_port: int, no_auto: bool = False, show_timing: bool = False
             if agent:
                 await agent.terminate()
         except Exception:
-            LOGGER.exception("Error terminating agent:")
+            LOGGER.exception("Error terminating Alice agent:")
+            terminated = False
+        try:
+            if alice_router:
+                await alice_router.terminate()
+        except Exception:
+            LOGGER.exception("Error terminating Routing agent:")
             terminated = False
 
     await asyncio.sleep(0.1)
@@ -289,6 +371,9 @@ if __name__ == "__main__":
         help="Choose the starting port number to listen on",
     )
     parser.add_argument(
+        "--routing", action="store_true", help="Enable inbound routing demonstration"
+    )
+    parser.add_argument(
         "--timing", action="store_true", help="Enable timing information"
     )
     args = parser.parse_args()
@@ -297,7 +382,7 @@ if __name__ == "__main__":
 
     try:
         asyncio.get_event_loop().run_until_complete(
-            main(args.port, args.no_auto, args.timing)
+            main(args.port, args.no_auto, args.timing, args.routing)
         )
     except KeyboardInterrupt:
         os._exit(1)

@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # noqa
 
 from runners.support.agent import DemoAgent, default_genesis_txns
-from runners.support.utils import log_timer, progress, require_indy
+from runners.support.utils import log_msg, log_timer, progress, require_indy
 
 LOGGER = logging.getLogger(__name__)
 
@@ -254,9 +254,15 @@ async def main(
 
         with log_timer("Connect duration:"):
             if routing:
+                log_msg("Connect Alice to router ...")
+                log_msg("... get invite from router ...")
                 router_invite = await alice_router.get_invite()
+                print(router_invite)
+                log_msg("... alice receive invite ...")
                 alice_router_conn_id = await alice.receive_invite(router_invite)
+                log_msg("... wait for connection to router ...")
                 await asyncio.wait_for(alice.detect_connection(), 30)
+                log_msg("... connected!")
 
             invite = await faber.get_invite()
 
