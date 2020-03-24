@@ -131,3 +131,4 @@ class TestAgentMessage(AsyncTestCase):
         assert trace_report.traced_type == msg._type
         assert trace_report.outcome == "A-OK!"
 
+        print("tracer:", tracer.serialize())

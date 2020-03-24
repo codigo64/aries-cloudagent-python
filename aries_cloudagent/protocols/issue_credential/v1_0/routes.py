@@ -35,6 +35,16 @@ from .models.credential_exchange import (
 )
 
 
+class V10MessageTracingSchema(Schema):
+    """Request/result schema including agent message tracing."""
+
+    trace_info = fields.Str(
+        description="Message trace information", required=False,
+        example="{\"target\":\"message\",\"full_thread\":\"True\","
+                "\"trace_reports\":\"{}\"}"
+    )
+
+
 class V10AttributeMimeTypesResultSchema(Schema):
     """Result schema for credential attribute MIME types by credential definition."""
 
@@ -48,13 +58,13 @@ class V10CredentialExchangeListResultSchema(Schema):
     )
 
 
-class V10CredentialStoreRequestSchema(Schema):
+class V10CredentialStoreRequestSchema(V10MessageTracingSchema):
     """Request schema for sending a credential store admin message."""
 
     credential_id = fields.Str(required=False)
 
 
-class V10CredentialProposalRequestSchemaBase(Schema):
+class V10CredentialProposalRequestSchemaBase(V10MessageTracingSchema):
     """Base class for request schema for sending credential proposal admin message."""
 
     connection_id = fields.UUID(
@@ -105,7 +115,7 @@ class V10CredentialProposalRequestMandSchema(V10CredentialProposalRequestSchemaB
     credential_proposal = fields.Nested(CredentialPreviewSchema, required=True)
 
 
-class V10CredentialOfferRequestSchema(Schema):
+class V10CredentialOfferRequestSchema(V10MessageTracingSchema):
     """Request schema for sending credential offer admin message."""
 
     connection_id = fields.UUID(
@@ -138,20 +148,20 @@ class V10CredentialOfferRequestSchema(Schema):
     credential_preview = fields.Nested(CredentialPreviewSchema, required=True)
 
 
-class V10CredentialIssueRequestSchema(Schema):
+class V10CredentialIssueRequestSchema(V10MessageTracingSchema):
     """Request schema for sending credential issue admin message."""
 
     comment = fields.Str(description="Human-readable comment", required=False)
     credential_preview = fields.Nested(CredentialPreviewSchema, required=True)
 
 
-class V10CredentialProblemReportRequestSchema(Schema):
+class V10CredentialProblemReportRequestSchema(V10MessageTracingSchema):
     """Request schema for sending problem report."""
 
     explain_ltxt = fields.Str(required=True)
 
 
-class V10PublishRevocationsResultSchema(Schema):
+class V10PublishRevocationsResultSchema(V10MessageTracingSchema):
     """Result schema for revocation publication API call."""
 
     results = fields.Dict(
@@ -176,6 +186,7 @@ async def attribute_mime_types_get(request: web.BaseRequest):
         The MIME types response
 
     """
+    print(">> in routes.attribute_mime_types_get()")
     context = request.app["request_context"]
     credential_id = request.match_info["credential_id"]
     holder: BaseHolder = await context.inject(BaseHolder)
@@ -196,6 +207,7 @@ async def credential_exchange_list(request: web.BaseRequest):
         The connection list response
 
     """
+    print(">> in routes.credential_exchange_list()")
     context = request.app["request_context"]
     tag_filter = {}
     if "thread_id" in request.query and request.query["thread_id"] != "":
@@ -221,6 +233,7 @@ async def credential_exchange_retrieve(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_retrieve()")
     context = request.app["request_context"]
     credential_exchange_id = request.match_info["cred_ex_id"]
     try:
@@ -253,6 +266,7 @@ async def credential_exchange_send(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_send()")
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
@@ -315,6 +329,7 @@ async def credential_exchange_send_proposal(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_send_proposal()")
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
@@ -378,11 +393,13 @@ async def credential_exchange_send_free_offer(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_send_free_offer()")
 
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
     body = await request.json()
+    print("   with body:", body)
 
     connection_id = body.get("connection_id")
     cred_def_id = body.get("cred_def_id")
@@ -393,6 +410,7 @@ async def credential_exchange_send_free_offer(request: web.BaseRequest):
     revoc_reg_id = body.get("revoc_reg_id")
     comment = body.get("comment")
     preview_spec = body.get("credential_preview")
+    trace_info = body.get("trace_info")
 
     if not cred_def_id:
         raise web.HTTPBadRequest(reason="cred_def_id is required")
@@ -432,6 +450,7 @@ async def credential_exchange_send_free_offer(request: web.BaseRequest):
         auto_issue=auto_issue,
         auto_remove=auto_remove,
         revoc_reg_id=revoc_reg_id,
+        trace_info=trace_info
     )
 
     credential_manager = CredentialManager(context)
@@ -443,6 +462,7 @@ async def credential_exchange_send_free_offer(request: web.BaseRequest):
         credential_exchange_record, comment=comment
     )
 
+    #print("   credential_offer_message:", credential_offer_message)
     await outbound_handler(credential_offer_message, connection_id=connection_id)
 
     return web.json_response(credential_exchange_record.serialize())
@@ -467,6 +487,7 @@ async def credential_exchange_send_bound_offer(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_send_bound_offer()")
 
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
@@ -515,6 +536,7 @@ async def credential_exchange_send_request(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_send_request()")
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
@@ -565,6 +587,7 @@ async def credential_exchange_issue(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_issue()")
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
@@ -627,6 +650,7 @@ async def credential_exchange_store(request: web.BaseRequest):
         The credential exchange record
 
     """
+    print(">> in routes.credential_exchange_store()")
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
@@ -681,6 +705,7 @@ async def credential_exchange_problem_report(request: web.BaseRequest):
         request: aiohttp request object
 
     """
+    print(">> in routes.credential_exchange_problem_report()")
     context = request.app["request_context"]
     outbound_handler = request.app["outbound_message_router"]
 
@@ -728,6 +753,7 @@ async def credential_exchange_revoke(request: web.BaseRequest):
         The credential request details.
 
     """
+    print(">> in routes.credential_exchange_revoke()")
 
     context = request.app["request_context"]
     try:
@@ -767,6 +793,7 @@ async def credential_exchange_publish_revocations(request: web.BaseRequest):
         Credential revocation ids published as revoked by revocation registry id.
 
     """
+    print(">> in routes.credential_exchange_publish_revocations()")
 
     context = request.app["request_context"]
 
@@ -786,6 +813,7 @@ async def credential_exchange_remove(request: web.BaseRequest):
         request: aiohttp request object
 
     """
+    print(">> in routes.credential_exchange_remove()")
     context = request.app["request_context"]
     credential_exchange_id = request.match_info["cred_ex_id"]
     try:

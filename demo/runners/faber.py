@@ -255,6 +255,7 @@ async def main(
                     "auto_remove": False,
                     "credential_preview": cred_preview,
                     "revoc_reg_id": revocation_registry_id,
+                    "trace_info": "{\"target\":\"message\",\"full_thread\":\"True\"}"
                 }
                 await agent.admin_POST("/issue-credential/send-offer", offer_request)
 

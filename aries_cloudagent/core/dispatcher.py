@@ -140,6 +140,14 @@ class Dispatcher:
                 error_result.assign_thread_id(inbound_message.receipt.thread_id)
             message = None
 
+        print(">>> Dispatch inbound message, add timestamp event here?")
+        message.add_trace_event(
+            handler=self.context.scope_name,
+            ellapsed_milli=0,
+            outcome="Dispatch inbound message"
+        )
+        print("    message:", message)
+
         context = RequestContext(base_context=self.context)
         context.message = message
         context.message_receipt = inbound_message.receipt

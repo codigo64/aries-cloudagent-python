@@ -92,6 +92,7 @@ class CredentialManager:
             A tuple of the new credential exchange record and credential offer message
 
         """
+        print(" >>> in manager.prepare_send()")
         if auto_remove is None:
             auto_remove = not self.context.settings.get("preserve_exchange_records")
         credential_exchange = V10CredentialExchange(
@@ -148,6 +149,7 @@ class CredentialManager:
             Resulting credential exchange record including credential proposal
 
         """
+        print(" >>> in manager.create_proposal()")
         credential_proposal_message = CredentialProposal(
             comment=comment,
             credential_proposal=credential_preview,
@@ -185,6 +187,7 @@ class CredentialManager:
             The resulting credential exchange record, created
 
         """
+        print(" >>> in manager.receive_proposal()")
         # go to cred def via ledger to get authoritative schema id
         credential_proposal_message = self.context.message
         connection_id = self.context.connection_record.connection_id
@@ -224,6 +227,8 @@ class CredentialManager:
             A tuple (credential exchange record, credential offer message)
 
         """
+        print(" >>> in manager.create_offer()")
+        #print("     credential_exchange_record:", credential_exchange_record)
         if credential_exchange_record.credential_proposal_dict:
             credential_proposal_message = CredentialProposal.deserialize(
                 credential_exchange_record.credential_proposal_dict
@@ -240,6 +245,7 @@ class CredentialManager:
         else:
             cred_def_id = credential_exchange_record.credential_definition_id
             cred_preview = None
+        #print("     cred_preview:", cred_preview)
 
         async def _create(cred_def_id):
             ledger: BaseLedger = await self.context.inject(BaseLedger)
@@ -287,11 +293,20 @@ class CredentialManager:
         credential_exchange_record.credential_definition_id = credential_offer[
             "cred_def_id"
         ]
+        if credential_exchange_record.trace_info:
+            trace_info = json.loads(credential_exchange_record.trace_info)
+            credential_offer_message.add_trace_decorator(
+                target=trace_info["target"],
+                full_thread=trace_info["full_thread"],
+            )
         credential_exchange_record.state = V10CredentialExchange.STATE_OFFER_SENT
         credential_exchange_record.credential_offer = credential_offer
         await credential_exchange_record.save(
             self.context, reason="create credential offer"
         )
+        #print("     credential_offer_message:", credential_offer_message)
+        #print("     credential_exchange_record:", credential_exchange_record)
+        print("<<<<<<<<")
 
         return (credential_exchange_record, credential_offer_message)
 
@@ -303,6 +318,7 @@ class CredentialManager:
             The credential exchange record, updated
 
         """
+        print(" >>> in manager.receive_offer()")
         credential_offer_message: CredentialOffer = self.context.message
         connection_id = self.context.connection_record.connection_id
 
@@ -310,6 +326,7 @@ class CredentialManager:
         indy_offer = credential_offer_message.indy_offer(0)
         schema_id = indy_offer["schema_id"]
         cred_def_id = indy_offer["cred_def_id"]
+        trace_info = credential_offer_message._trace
 
         if credential_preview:
             credential_proposal_dict = CredentialProposal(
@@ -345,6 +362,8 @@ class CredentialManager:
         credential_exchange_record.state = V10CredentialExchange.STATE_OFFER_RECEIVED
         credential_exchange_record.schema_id = schema_id
         credential_exchange_record.credential_definition_id = cred_def_id
+        if trace_info:
+            credential_exchange_record.trace_info = json.dumps(trace_info.serialize())
 
         await credential_exchange_record.save(
             self.context, reason="receive credential offer"
@@ -367,6 +386,7 @@ class CredentialManager:
             A tuple (credential exchange record, credential request message)
 
         """
+        print(" >>> in manager.create_request()")
         credential_definition_id = credential_exchange_record.credential_definition_id
         credential_offer = credential_exchange_record.credential_offer
 
@@ -444,6 +464,7 @@ class CredentialManager:
             credential exchange record, retrieved and updated
 
         """
+        print(" >>> in manager.receive_request()")
         credential_request_message = self.context.message
         assert len(credential_request_message.requests_attach or []) == 1
         credential_request = credential_request_message.indy_cred_req(0)
@@ -483,6 +504,7 @@ class CredentialManager:
             Tuple: (Updated credential exchange record, credential message)
 
         """
+        print(" >>> in manager.issue_credential()")
         schema_id = credential_exchange_record.schema_id
 
         if credential_exchange_record.credential:
@@ -550,6 +572,7 @@ class CredentialManager:
             Credential exchange record, retrieved and updated
 
         """
+        print(" >>> in manager.receive_credential()")
         credential_message = self.context.message
         assert len(credential_message.credentials_attach or []) == 1
         raw_credential = credential_message.indy_credential(0)
@@ -587,6 +610,7 @@ class CredentialManager:
             Tuple: (Updated credential exchange record, credential ack message)
 
         """
+        print(" >>> in manager.store_credential()")
         raw_credential = credential_exchange_record.raw_credential
         revoc_reg_def = None
         ledger: BaseLedger = await self.context.inject(BaseLedger)
@@ -665,6 +689,7 @@ class CredentialManager:
             credential exchange record, retrieved and updated
 
         """
+        print(" >>> in manager.receive_credential_ack()")
         credential_ack_message = self.context.message
         (
             credential_exchange_record
@@ -696,6 +721,7 @@ class CredentialManager:
             publish: whether to publish the resulting revocation registry delta
 
         """
+        print(" >>> in manager.revoke_credential()")
         assert (
             credential_exchange_record.revocation_id
             and credential_exchange_record.revoc_reg_id

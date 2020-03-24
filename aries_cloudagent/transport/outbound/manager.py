@@ -349,6 +349,13 @@ class OutboundTransportManager:
                         new_pending += 1
                     else:
                         queued.state = QueuedOutboundMessage.STATE_ENCODE
+                        print(">>> Encode queued outbound message, add timestamp event here?")
+                        queued.message.add_trace_event(
+                            handler=self.context.scope_name,
+                            ellapsed_milli=0,
+                            outcome="Encode queued outbound message"
+                        )
+                        print("    queued.message:", queued.message)
                         self.encode_queued_message(queued)
                 else:
                     new_pending += 1

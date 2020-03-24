@@ -409,7 +409,7 @@ class DemoAgent:
                 EVENT_LOGGER.debug(
                     "Agent called controller webhook: %s%s",
                     handler,
-                    (f" with payload: \n{repr_json(payload)}" if payload else ""),
+                    ((f""))#(f" with payload: \n{repr_json(payload)}" if payload else ""),
                 )
                 asyncio.get_event_loop().create_task(method(payload))
             else:
@@ -442,7 +442,7 @@ class DemoAgent:
             EVENT_LOGGER.debug("Controller GET %s request to Agent", path)
             response = await self.admin_request("GET", path, None, text, params)
             EVENT_LOGGER.debug(
-                "Response from GET %s received: \n%s", path, repr_json(response),
+                "Response from GET %s received: \n%s", path, "", #repr_json(response),
             )
             return response
         except ClientError as e:
@@ -456,11 +456,11 @@ class DemoAgent:
             EVENT_LOGGER.debug(
                 "Controller POST %s request to Agent%s",
                 path,
-                (" with data: \n{}".format(repr_json(data)) if data else ""),
+                (""), #(" with data: \n{}".format(repr_json(data)) if data else ""),
             )
             response = await self.admin_request("POST", path, data, text, params)
             EVENT_LOGGER.debug(
-                "Response from POST %s received: \n%s", path, repr_json(response),
+                "Response from POST %s received: \n%s", path, "", #repr_json(response),
             )
             return response
         except ClientError as e:
